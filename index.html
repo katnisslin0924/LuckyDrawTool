@@ -519,7 +519,11 @@
     overflow: hidden;
   }
 
-  /* the 開始抽獎 card, enlarged and re-laid-out once moved inside the stage frame */
+  /* 開始抽獎 only happens in stage mode now - the card stays out of the
+     settings page's normal flow entirely, and only appears once JS moves it
+     into #stageDrawSlot on enterStageMode() (which also flips it to this
+     enlarged, re-laid-out style). */
+  #drawCard{ display: none; }
   body.stage-mode-active #drawCard{
     background: none;
     border: none;
@@ -960,7 +964,7 @@
     <!-- 中獎名單 -->
     <div class="card">
       <div class="row-between" style="margin-bottom:16px;">
-        <h2 style="margin:0;"><span class="idx">4</span>中獎名單</h2>
+        <h2 style="margin:0;"><span class="idx">3</span>中獎名單</h2>
         <button class="btn danger small" id="resetBtn">重置活動</button>
       </div>
       <div id="winnerLists"></div>
@@ -1302,11 +1306,27 @@
     else { hint.textContent = ''; }
   }
 
+  // Defaults 本次抽出人數 to the selected tier's full remaining quota, so
+  // staff don't have to type it in on stage - they can still edit it down
+  // by hand afterwards if they want to split a tier across multiple draws.
+  // Called whenever the *selected tier* changes (tier dropdown, entering
+  // stage mode) or its remaining quota changes (after a draw, a quota edit,
+  // a reset) - never from batchQty's own input handler, or every keystroke
+  // typed into that field would get immediately overwritten.
+  function presetBatchQtyToTierQuota(){
+    var t = currentTier();
+    var qtyInput = document.getElementById('batchQty');
+    if(!t){ return; }
+    var remain = Math.max(0, Math.min(t.quota - t.winners.length, state.pool.length));
+    qtyInput.value = remain || 1;
+  }
+
   function renderAll(){
     renderTierRows();
     renderTierSelect();
     renderWinnerLists();
     renderStats();
+    if(state.mode === 'batch'){ presetBatchQtyToTierQuota(); }
     updateDrawAvailability();
     updateRedrawButton();
   }
@@ -1320,11 +1340,15 @@
     document.getElementById('modeSingleBtn').classList.toggle('active', mode === 'single');
     document.getElementById('modeBatchBtn').classList.toggle('active', mode === 'batch');
     document.getElementById('batchQtyWrap').style.display = mode === 'batch' ? 'block' : 'none';
+    if(mode === 'batch'){ presetBatchQtyToTierQuota(); }
     updateDrawAvailability();
   }
   document.getElementById('modeSingleBtn').addEventListener('click', function(){ setDrawMode('single'); });
   document.getElementById('modeBatchBtn').addEventListener('click', function(){ setDrawMode('batch'); });
-  document.getElementById('tierSelect').addEventListener('change', updateDrawAvailability);
+  document.getElementById('tierSelect').addEventListener('change', function(){
+    if(state.mode === 'batch'){ presetBatchQtyToTierQuota(); }
+    updateDrawAvailability();
+  });
   document.getElementById('batchQty').addEventListener('input', updateDrawAvailability);
 
   // ---------- add tier ----------
