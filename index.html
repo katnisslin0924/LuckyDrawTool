@@ -861,9 +861,9 @@
     <div class="card">
       <h2><span class="idx">1</span>抽獎名單匯入</h2>
       <div class="hint" style="margin-bottom:10px;">
-        預設已載入 JU Lucky No.1–300。若現場號碼有異動（例如取消、新增、調整範圍），可於下方貼上或上傳最新名單以取代目前名單。
+        預設已載入 JU Lucky No.1–300。若現場號碼有異動（例如取消、新增、調整範圍），可於下方貼上或上傳最新名單以取代目前名單。可直接輸入「1-300」這種範圍寫法，不必每個號碼都貼一行。
       </div>
-      <textarea id="importText" rows="4" placeholder="請貼上號碼，可用換行、逗號或空白分隔。例如：&#10;1&#10;2&#10;5&#10;8&#10;也支援直接貼上「JU Lucky No.12」這類格式，系統會自動辨識號碼。"></textarea>
+      <textarea id="importText" rows="4" placeholder="請貼上號碼，可用換行、逗號或空白分隔。例如：&#10;1-300（代表 1 到 300，範圍與單一號碼可混用）&#10;5&#10;8&#10;也支援直接貼上「JU Lucky No.12」這類格式，系統會自動辨識號碼。"></textarea>
       <div class="row-between" style="margin-top:12px;">
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
           <label class="btn ghost small" style="cursor:pointer; margin:0;">
@@ -1020,8 +1020,18 @@
 
   applyMasterList(generateDefaultList());
 
-  // seed one starter tier so the UI isn't empty
-  state.tiers.push({ id: state.nextTierId++, name: "特別獎", quota: 1, winners: [] });
+  // seed the pre-agreed prize lineup, in draw order. Staff can still add
+  // more tiers by hand from the 獎項設定 card below (e.g. for on-site
+  // bonus prizes decided the day of the event).
+  [
+    { name: "高雄洲際酒店 精緻禮品組", quota: 10 },
+    { name: "高雄洲際酒店 NT$1,000 餐食抵用券", quota: 5 },
+    { name: "高雄洲際酒店 豪華經典房 住宿券", quota: 1 },
+    { name: "阿里山英迪格酒店 精品房 住宿券", quota: 1 },
+    { name: "高雄洲際酒店 港灣海景套房 住宿券", quota: 1 }
+  ].forEach(function(preset){
+    state.tiers.push({ id: state.nextTierId++, name: preset.name, quota: preset.quota, winners: [] });
+  });
 
   // ---------- helpers ----------
   function fmt(id){
@@ -1034,16 +1044,38 @@
   // plain numbers (newline / comma / space separated) and full labels like
   // "JU Lucky No.12" (the surrounding words are simply ignored rather than
   // being mis-tokenised into bogus entries).
+  // Parses pasted/uploaded text into a deduped, sorted list of ticket
+  // numbers. Two formats are understood, and can be freely mixed:
+  //   - ranges, e.g. "1-300" or "1~300" (expands to every number in between)
+  //   - individual numbers, plain ("5") or inside a label ("JU Lucky No.12")
+  // Ranges are resolved first (and removed from the text) so the leftover
+  // plain-number scan below never double-counts them.
   function parseTicketList(text){
-    var matches = String(text || "").match(/\d+/g) || [];
+    var str = String(text || "");
     var seen = {};
     var result = [];
-    matches.forEach(function(numStr){
+    function addId(numStr){
       var id = String(parseInt(numStr, 10));
       if(id === 'NaN' || seen[id]) return;
       seen[id] = true;
       result.push(id);
+    }
+
+    var MAX_RANGE_SPAN = 5000; // guards against a typo trying to expand a huge range
+    var remainder = str.replace(/(\d+)\s*[-~～]\s*(\d+)/g, function(whole, a, b){
+      var start = parseInt(a, 10), end = parseInt(b, 10);
+      if(start > end){ var tmp = start; start = end; end = tmp; }
+      if((end - start) > MAX_RANGE_SPAN){
+        // implausible as a real range - read the two numbers on their own
+        // instead of silently generating thousands of unintended tickets
+        addId(a); addId(b);
+      } else {
+        for(var n = start; n <= end; n++){ addId(String(n)); }
+      }
+      return ' ';
     });
+
+    (remainder.match(/\d+/g) || []).forEach(addId);
     result.sort(function(a,b){ return parseInt(a,10) - parseInt(b,10); });
     return result;
   }
