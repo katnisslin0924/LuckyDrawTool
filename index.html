@@ -139,7 +139,7 @@
   /* ---------- tier config ---------- */
   .tier-row{
     display:grid;
-    grid-template-columns: 1fr 110px 110px 80px;
+    grid-template-columns: 1.5fr 1fr 90px 90px 32px;
     gap: 10px;
     align-items:center;
     margin-bottom: 10px;
@@ -267,7 +267,7 @@
   }
   @media (max-width: 720px){
     .draw-grid{ grid-template-columns: 1fr; }
-    .tier-row{ grid-template-columns: 1fr 90px 90px 40px; }
+    .tier-row{ grid-template-columns: 1fr 1fr 70px 70px 28px; }
   }
 
   /* ---------- stage / result ---------- */
@@ -534,10 +534,11 @@
     justify-content: center;
   }
   body.stage-mode-active #drawCard h2{ display: none; }
-  body.stage-mode-active #drawCard .mode-toggle{
-    transform: scale(1.2);
-    margin-bottom: 3vh;
-  }
+  /* 單抽模式 is removed from stage view entirely (only 批量抽獎 remains, see
+     enterStageMode() forcing batch mode) - with just one mode left there's
+     nothing to toggle, so hide the whole pill rather than leave a single
+     inert-looking button. */
+  body.stage-mode-active #drawCard .mode-toggle{ display: none; }
   body.stage-mode-active #drawCard .draw-grid{
     width: min(85%, 900px);
     margin-bottom: 3vh;
@@ -764,7 +765,7 @@
     font-size: 20px;
     font-weight: 700;
     letter-spacing: 2px;
-    margin: 0 auto 10px;
+    margin: 0 auto 4px;
     background: linear-gradient(180deg, #f8e6b8, var(--gold) 60%, #b6903f);
     -webkit-background-clip: text;
     background-clip: text;
@@ -773,7 +774,20 @@
   }
   .tier-banner::before{ content: "— "; -webkit-text-fill-color: var(--gold-dim); }
   .tier-banner::after{ content: " —"; -webkit-text-fill-color: var(--gold-dim); }
-  body.stage-mode-active .tier-banner{ font-size: 1.9vw; margin-bottom: 1.2vh; }
+  body.stage-mode-active .tier-banner{ font-size: 1.9vw; margin-bottom: 0.4vh; }
+
+  /* prize value, shown directly under the tier-name banner - same family,
+     visibly smaller/quieter so the name stays the primary focal point */
+  .tier-value-banner{
+    text-align: center;
+    font-family: var(--serif);
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    margin: 0 auto 10px;
+  }
+  body.stage-mode-active .tier-value-banner{ font-size: 1.15vw; margin-bottom: 1.2vh; }
 
   /* winner callout: floats up out of the wheel and becomes an independent,
      enlarged card once a winner is confirmed */
@@ -882,7 +896,7 @@
     <div class="card">
       <h2><span class="idx">2</span>獎項設定</h2>
       <div class="tier-row head">
-        <div>獎項名稱</div><div>名額</div><div>已抽出</div><div></div>
+        <div>獎項名稱</div><div>獎項價值</div><div>名額</div><div>已抽出</div><div></div>
       </div>
       <div id="tierRows"></div>
       <div class="row-between" style="margin-top:14px;">
@@ -914,8 +928,10 @@
         </div>
       </div>
 
-      <!-- shows the currently-selected prize/tier name above the draw area -->
+      <!-- shows the currently-selected prize/tier name (and its value, just
+           below, in smaller text) above the draw area -->
       <div class="tier-banner" id="tierBanner" style="display:none;"></div>
+      <div class="tier-value-banner" id="tierValueBanner" style="display:none;"></div>
 
       <div class="stage" id="stage">
         <div class="placeholder">尚未開始抽獎</div>
@@ -1024,13 +1040,13 @@
   // more tiers by hand from the 獎項設定 card below (e.g. for on-site
   // bonus prizes decided the day of the event).
   [
-    { name: "高雄洲際酒店 精緻禮品組", quota: 10 },
-    { name: "高雄洲際酒店 NT$1,000 餐食抵用券", quota: 5 },
-    { name: "高雄洲際酒店 豪華經典房 住宿券", quota: 1 },
-    { name: "阿里山英迪格酒店 精品房 住宿券", quota: 1 },
-    { name: "高雄洲際酒店 港灣海景套房 住宿券", quota: 1 }
+    { name: "高雄洲際酒店 精緻禮品組", quota: 10, value: "NT$1,000" },
+    { name: "高雄洲際酒店 NT$1,000 餐食抵用券", quota: 5, value: "NT$1,000" },
+    { name: "高雄洲際酒店 豪華經典房 住宿券", quota: 1, value: "NT$18,000" },
+    { name: "阿里山英迪格酒店 精品房 住宿券", quota: 1, value: "NT$50,000" },
+    { name: "高雄洲際酒店 港灣海景套房 住宿券", quota: 1, value: "NT$50,000" }
   ].forEach(function(preset){
-    state.tiers.push({ id: state.nextTierId++, name: preset.name, quota: preset.quota, winners: [] });
+    state.tiers.push({ id: state.nextTierId++, name: preset.name, quota: preset.quota, value: preset.value, winners: [] });
   });
 
   // ---------- helpers ----------
@@ -1039,11 +1055,6 @@
     return String(id);
   }
 
-  // Parse pasted/uploaded text into a deduped, sorted list of ticket numbers.
-  // Pulls out every run of digits in the text, so it works equally well with
-  // plain numbers (newline / comma / space separated) and full labels like
-  // "JU Lucky No.12" (the surrounding words are simply ignored rather than
-  // being mis-tokenised into bogus entries).
   // Parses pasted/uploaded text into a deduped, sorted list of ticket
   // numbers. Two formats are understood, and can be freely mixed:
   //   - ranges, e.g. "1-300" or "1~300" (expands to every number in between)
@@ -1135,6 +1146,16 @@
       nameInput.addEventListener('input', function(){
         t.name = nameInput.value;
         renderTierSelect();
+        updateDrawAvailability();
+      });
+
+      var valueInput = document.createElement('input');
+      valueInput.type = 'text';
+      valueInput.value = t.value || '';
+      valueInput.placeholder = '例如：NT$1,000（選填）';
+      valueInput.addEventListener('input', function(){
+        t.value = valueInput.value;
+        updateDrawAvailability();
       });
 
       var quotaInput = document.createElement('input');
@@ -1170,6 +1191,7 @@
       });
 
       row.appendChild(nameInput);
+      row.appendChild(valueInput);
       row.appendChild(quotaInput);
       row.appendChild(drawnLabel);
       row.appendChild(removeBtn);
@@ -1268,7 +1290,7 @@
     }
 
     drawBtn.disabled = noTier || poolEmpty || tierFull;
-    syncTierBanner(t ? t.name : '');
+    syncTierBanner(t);
 
     // currentTier() can come back empty either because zero tiers exist yet,
     // or because tiers exist but every one of them is already full (the
@@ -1290,26 +1312,24 @@
   }
 
   // ---------- mode toggle ----------
-  document.getElementById('modeSingleBtn').addEventListener('click', function(){
-    state.mode = 'single';
-    document.getElementById('modeSingleBtn').classList.add('active');
-    document.getElementById('modeBatchBtn').classList.remove('active');
-    document.getElementById('batchQtyWrap').style.display = 'none';
+  // Shared by the two toggle buttons below and by enterStageMode() (which
+  // forces batch mode, since the single-mode button is hidden in stage view
+  // - see body.stage-mode-active .mode-toggle #modeSingleBtn).
+  function setDrawMode(mode){
+    state.mode = mode;
+    document.getElementById('modeSingleBtn').classList.toggle('active', mode === 'single');
+    document.getElementById('modeBatchBtn').classList.toggle('active', mode === 'batch');
+    document.getElementById('batchQtyWrap').style.display = mode === 'batch' ? 'block' : 'none';
     updateDrawAvailability();
-  });
-  document.getElementById('modeBatchBtn').addEventListener('click', function(){
-    state.mode = 'batch';
-    document.getElementById('modeBatchBtn').classList.add('active');
-    document.getElementById('modeSingleBtn').classList.remove('active');
-    document.getElementById('batchQtyWrap').style.display = 'block';
-    updateDrawAvailability();
-  });
+  }
+  document.getElementById('modeSingleBtn').addEventListener('click', function(){ setDrawMode('single'); });
+  document.getElementById('modeBatchBtn').addEventListener('click', function(){ setDrawMode('batch'); });
   document.getElementById('tierSelect').addEventListener('change', updateDrawAvailability);
   document.getElementById('batchQty').addEventListener('input', updateDrawAvailability);
 
   // ---------- add tier ----------
   document.getElementById('addTierBtn').addEventListener('click', function(){
-    state.tiers.push({ id: state.nextTierId++, name: '', quota: 1, winners: [] });
+    state.tiers.push({ id: state.nextTierId++, name: '', quota: 1, value: '', winners: [] });
     renderAll();
   });
 
@@ -1451,25 +1471,30 @@
     return false;
   }
 
-  function showWheelUI(tierName){
+  function showWheelUI(tier){
     document.getElementById('stage').style.display = 'none';
     document.getElementById('wheelWrap').style.display = 'flex';
-    syncTierBanner(tierName || '');
+    syncTierBanner(tier || null);
   }
   function hideWheelUI(){
     document.getElementById('wheelWrap').style.display = 'none';
     document.getElementById('stage').style.display = '';
     document.getElementById('wheelWinnerCallout').classList.remove('show');
   }
-  // Shows the current prize/tier name above the draw area (ticket grid, or
-  // the wheel if that presentation is ever re-enabled). Independent of
-  // whether a draw is in progress, so it stays visible as soon as a tier is
-  // selected - not just after drawing.
-  function syncTierBanner(name){
+  // Shows the current prize/tier's name and value above the draw area
+  // (ticket grid, or the wheel if that presentation is ever re-enabled).
+  // Independent of whether a draw is in progress, so it stays visible as
+  // soon as a tier is selected - not just after drawing.
+  function syncTierBanner(tier){
     var banner = document.getElementById('tierBanner');
-    if(!banner) return;
-    banner.textContent = name || '';
+    var valueBanner = document.getElementById('tierValueBanner');
+    if(!banner || !valueBanner) return;
+    var name = tier ? (tier.name || '') : '';
+    var value = tier ? (tier.value || '') : '';
+    banner.textContent = name;
     banner.style.display = name ? 'block' : 'none';
+    valueBanner.textContent = value ? ('價值 ' + value) : '';
+    valueBanner.style.display = value ? 'block' : 'none';
   }
   function resetStageDisplay(){
     hideWheelUI();
@@ -1557,7 +1582,7 @@
     calloutEl.classList.remove('show');
     calloutEl.style.removeProperty('--show-top');
     calloutEl.innerHTML = '';
-    showWheelUI(t.name);
+    showWheelUI(t);
 
     spinWheelTo(segAngle, built.winnerIndex, function(){
       document.getElementById('wheelHubLabel').innerHTML =
@@ -1580,7 +1605,7 @@
         '<span class="wwc-label">中獎號碼</span>' +
         '<span class="wwc-num">' + escapeHtml(fmt(winnerId)) + '</span>' +
         '<span class="wwc-tier">' + escapeHtml(t.name || '') + '</span>';
-      syncTierBanner('');
+      syncTierBanner(null);
 
       // Compute the highest the callout can float without covering the
       // controls row above it - measured live, so this stays correct across
@@ -1800,6 +1825,11 @@
       stageDrawSlot.appendChild(drawCard);
       document.body.classList.add('stage-mode-active');
       stageView.classList.add('show');
+      // 單抽模式 is hidden in stage view (see .mode-toggle CSS below) to keep
+      // the on-stage controls to a single, simpler flow - force batch mode
+      // so the draw button still works even if 單抽 was selected beforehand.
+      // A "single" draw is just a batch draw of 1, so nothing is lost.
+      setDrawMode('batch');
       // Fullscreen the whole document (not just stageView): the Fullscreen
       // API promotes the fullscreened element into a top layer that always
       // paints above everything else, including higher z-index siblings
