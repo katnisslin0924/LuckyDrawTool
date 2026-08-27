@@ -546,13 +546,24 @@
   body.stage-mode-active #drawCard .draw-grid{
     width: min(85%, 900px);
     margin-bottom: 3vh;
+    /* #tierSelectField is always hidden now (see its inline style) - only
+       批次抽出人數 and the draw/next-tier button remain, so there are just
+       two tracks to lay out, not three */
+    grid-template-columns: 1fr auto;
   }
   body.stage-mode-active #drawCard .field-label{ font-size: 0.9vw; }
   body.stage-mode-active #drawCard select,
-  body.stage-mode-active #drawCard input,
-  body.stage-mode-active #drawCard .draw-grid .btn{
+  body.stage-mode-active #drawCard input{
     font-size: 1.1vw;
     padding: 1.4vh 1vw;
+  }
+  /* the 開始抽獎 / 下一個獎項 button's gold background was feeling cramped
+     right around the text - give it noticeably more horizontal room (and a
+     min-width so it never shrinks back down to just the label) */
+  body.stage-mode-active #drawCard .draw-grid .btn{
+    font-size: 1.1vw;
+    padding: 1.6vh 3.4vw;
+    min-width: 16vw;
   }
   body.stage-mode-active #stage{
     width: 100%;
@@ -865,12 +876,12 @@
     <div class="titleblock">
       <div class="eyebrow">高雄洲際酒店 · 匯聚洲際經典 私享音樂晚宴</div>
       <h1>私享幸運時刻</h1>
-      <p id="rangeHint">目前名單共 300 組號碼（預設 JU Lucky No.1–300）</p>
+      <p id="rangeHint">目前名單共 165 組號碼（預設 JU Lucky No.1–165）</p>
     </div>
 
     <div class="stats-row">
-      <div class="stat"><div class="num" id="statTotal">300</div><div class="lab">總票數</div></div>
-      <div class="stat"><div class="num" id="statRemain">300</div><div class="lab">尚未抽出</div></div>
+      <div class="stat"><div class="num" id="statTotal">165</div><div class="lab">總票數</div></div>
+      <div class="stat"><div class="num" id="statRemain">165</div><div class="lab">尚未抽出</div></div>
       <div class="stat"><div class="num" id="statDrawn">0</div><div class="lab">已抽出</div></div>
       <div class="stat"><div class="num" id="statTiers">0</div><div class="lab">獎項數</div></div>
     </div>
@@ -879,16 +890,16 @@
     <div class="card">
       <h2><span class="idx">1</span>抽獎名單匯入</h2>
       <div class="hint" style="margin-bottom:10px;">
-        預設已載入 JU Lucky No.1–300。若現場號碼有異動（例如取消、新增、調整範圍），可於下方貼上或上傳最新名單以取代目前名單。可直接輸入「1-300」這種範圍寫法，不必每個號碼都貼一行。
+        預設已載入 JU Lucky No.1–165。若現場號碼有異動（例如取消、新增、調整範圍），可於下方貼上或上傳最新名單以取代目前名單。可直接輸入「1-165」這種範圍寫法，不必每個號碼都貼一行。
       </div>
-      <textarea id="importText" rows="4" placeholder="請貼上號碼，可用換行、逗號或空白分隔。例如：&#10;1-300（代表 1 到 300，範圍與單一號碼可混用）&#10;5&#10;8&#10;也支援直接貼上「JU Lucky No.12」這類格式，系統會自動辨識號碼。"></textarea>
+      <textarea id="importText" rows="4" placeholder="請貼上號碼，可用換行、逗號或空白分隔。例如：&#10;1-165（代表 1 到 165，範圍與單一號碼可混用）&#10;5&#10;8&#10;也支援直接貼上「JU Lucky No.12」這類格式，系統會自動辨識號碼。"></textarea>
       <div class="row-between" style="margin-top:12px;">
         <div style="display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
           <label class="btn ghost small" style="cursor:pointer; margin:0;">
             上傳檔案 (.txt / .csv)
             <input type="file" id="importFile" accept=".txt,.csv" style="display:none;">
           </label>
-          <button class="btn ghost small" id="restoreDefaultBtn">還原預設 1–300</button>
+          <button class="btn ghost small" id="restoreDefaultBtn">還原預設 1–165</button>
         </div>
         <button class="btn primary small" id="applyImportBtn" disabled>套用名單</button>
       </div>
@@ -918,8 +929,12 @@
         <button id="modeBatchBtn">批量抽獎</button>
       </div>
 
+      <!-- 選擇獎項 has no visible picker any more - stage mode walks through
+           獎項設定's tiers one at a time automatically (see #nextTierBtn),
+           so the <select> is just an internal pointer to "the current
+           tier" now, kept in sync by renderTierSelect() / advanceToTier(). -->
       <div class="draw-grid">
-        <div>
+        <div id="tierSelectField" style="display:none;">
           <label class="field-label">選擇獎項</label>
           <select id="tierSelect"></select>
         </div>
@@ -928,7 +943,8 @@
           <input type="number" id="batchQty" min="1" value="1">
         </div>
         <div>
-          <button class="btn primary" id="drawBtn" style="width:100%; padding:12px 0;">開始抽獎</button>
+          <button class="btn primary" id="drawBtn" style="width:100%;">開始抽獎</button>
+          <button class="btn primary" id="nextTierBtn" style="width:100%; display:none;">下一個獎項 →</button>
         </div>
       </div>
 
@@ -1009,7 +1025,7 @@
 (function(){
   "use strict";
 
-  var DEFAULT_TOTAL_TICKETS = 300;
+  var DEFAULT_TOTAL_TICKETS = 165;
   var PREFIX = "JU Lucky No.";
 
   function generateDefaultList(){
@@ -1210,6 +1226,25 @@
     }
   }
 
+  // First tier (in 獎項設定 order) that still has quota remaining - the
+  // starting point for the stage-mode sequence.
+  function firstAvailableTierId(){
+    var t = state.tiers.filter(function(x){ return (x.quota - x.winners.length) > 0; })[0];
+    return t ? t.id : null;
+  }
+
+  // Next tier after the given one (in 獎項設定 order) that still has quota
+  // remaining, or null if the given tier was the last one with anything
+  // left to draw. Drives the 下一個獎項 button in stage mode.
+  function nextAvailableTierId(afterTierId){
+    var idx = state.tiers.findIndex(function(x){ return x.id === afterTierId; });
+    var start = idx === -1 ? 0 : idx + 1;
+    for(var i = start; i < state.tiers.length; i++){
+      if((state.tiers[i].quota - state.tiers[i].winners.length) > 0){ return state.tiers[i].id; }
+    }
+    return null;
+  }
+
   function renderTierSelect(){
     var sel = document.getElementById('tierSelect');
     var prevVal = sel.value;
@@ -1222,8 +1257,17 @@
       if(remain <= 0){ opt.disabled = true; }
       sel.appendChild(opt);
     });
-    if(prevVal && Array.prototype.some.call(sel.options, function(o){return o.value === prevVal && !o.disabled;})){
+    // Preserve the previous selection exactly, even once that tier is full -
+    // stage mode intentionally keeps a just-finished tier "current" (so its
+    // name/results stay on screen) until 下一個獎項 is clicked, which is
+    // the only thing that should ever move the selection off it.
+    if(prevVal && Array.prototype.some.call(sel.options, function(o){ return o.value === prevVal; })){
       sel.value = prevVal;
+    } else if(sel.options.length){
+      // no prior selection (first load) or that tier no longer exists
+      // (deleted) - fall back to the first tier that still has quota
+      var fallbackId = firstAvailableTierId();
+      sel.value = fallbackId == null ? sel.options[0].value : String(fallbackId);
     }
     updateDrawAvailability();
   }
@@ -1232,6 +1276,15 @@
     var sel = document.getElementById('tierSelect');
     var id = parseInt(sel.value, 10);
     return state.tiers.filter(function(t){ return t.id === id; })[0] || null;
+  }
+
+  // Moves "current tier" to tierId (or to none, if null) and refreshes
+  // everything that depends on it. The only way the stage-mode sequence
+  // advances - see #nextTierBtn's click handler.
+  function advanceToTier(tierId){
+    document.getElementById('tierSelect').value = tierId == null ? '' : String(tierId);
+    if(state.mode === 'batch'){ presetBatchQtyToTierQuota(); }
+    updateDrawAvailability();
   }
 
   function renderWinnerLists(){
@@ -1279,30 +1332,48 @@
 
   function updateDrawAvailability(){
     var drawBtn = document.getElementById('drawBtn');
+    var nextBtn = document.getElementById('nextTierBtn');
+    var qtyWrap = document.getElementById('batchQtyWrap');
     var t = currentTier();
     var hint = document.getElementById('drawHint');
     var poolEmpty = state.pool.length === 0;
     var noTier = !t;
-    var tierFull = t && (t.quota - t.winners.length) <= 0;
+    var tierFull = !!t && (t.quota - t.winners.length) <= 0;
+    var hasNext = !!t && nextAvailableTierId(t.id) != null;
 
-    if(state.mode === 'batch'){
+    if(state.mode === 'batch' && t && !tierFull){
       var qtyInput = document.getElementById('batchQty');
-      var remainTier = t ? (t.quota - t.winners.length) : 0;
+      var remainTier = t.quota - t.winners.length;
       var maxAllowed = Math.max(0, Math.min(remainTier, state.pool.length));
       qtyInput.max = maxAllowed || 1;
       if(parseInt(qtyInput.value,10) > maxAllowed){ qtyInput.value = maxAllowed || 1; }
     }
 
-    drawBtn.disabled = noTier || poolEmpty || tierFull;
     syncTierBanner(t);
 
+    // Stage-mode sequencing: once the current tier's quota is fully drawn,
+    // swap 開始抽獎/人數 for a single 下一個獎項 button rather than leaving
+    // a disabled draw button sitting there - see #nextTierBtn's handler,
+    // which clears the screen and advances to the next tier in order.
+    if(tierFull){
+      qtyWrap.style.display = 'none';
+      drawBtn.style.display = 'none';
+      nextBtn.style.display = hasNext ? '' : 'none';
+    } else {
+      nextBtn.style.display = 'none';
+      drawBtn.style.display = '';
+      qtyWrap.style.display = (state.mode === 'batch') ? 'block' : 'none';
+    }
+    drawBtn.disabled = noTier || poolEmpty || tierFull;
+
     // currentTier() can come back empty either because zero tiers exist yet,
-    // or because tiers exist but every one of them is already full (the
-    // <select> then has no selectable option) - these need different copy.
+    // or because the previously-selected tier was deleted - these need
+    // different copy. A tier that's simply full (but with more after it)
+    // is handled above by the 下一個獎項 button, not this hint.
     if(noTier && state.tiers.length === 0){ hint.textContent = '請先於上方新增獎項'; }
-    else if(noTier){ hint.textContent = '所有獎項名額皆已抽滿，如需繼續請新增獎項或重置活動'; }
+    else if(noTier){ hint.textContent = '請於獎項設定選擇一個獎項'; }
+    else if(tierFull && !hasNext){ hint.textContent = '所有獎項已抽獎完畢'; }
     else if(poolEmpty){ hint.textContent = '票號池已全數抽出'; }
-    else if(tierFull){ hint.textContent = '此獎項名額已抽滿'; }
     else { hint.textContent = ''; }
   }
 
@@ -1350,6 +1421,29 @@
     updateDrawAvailability();
   });
   document.getElementById('batchQty').addEventListener('input', updateDrawAvailability);
+
+  // Advances the stage-mode sequence to the next tier. Two explicit steps,
+  // with a short pause between them, so the previous prize's name and
+  // drawn numbers are visibly gone from the screen before the next prize's
+  // name appears - drawing for it only starts once staff presses 開始抽獎.
+  document.getElementById('nextTierBtn').addEventListener('click', function(){
+    var nextBtn = document.getElementById('nextTierBtn');
+    if(nextBtn.disabled) return;
+    var finished = currentTier();
+    var finishedId = finished ? finished.id : null;
+
+    // step 1: clear the previous tier's name/value and drawn numbers
+    document.getElementById('stage').innerHTML = '<div class="placeholder">尚未開始抽獎</div>';
+    syncTierBanner(null);
+    nextBtn.disabled = true;
+    nextBtn.style.display = 'none';
+
+    setTimeout(function(){
+      // step 2: switch to and reveal the next prize
+      advanceToTier(nextAvailableTierId(finishedId));
+      nextBtn.disabled = false;
+    }, 380);
+  });
 
   // ---------- add tier ----------
   document.getElementById('addTierBtn').addEventListener('click', function(){
@@ -1426,12 +1520,12 @@
 
   document.getElementById('restoreDefaultBtn').addEventListener('click', function(){
     var parsed = generateDefaultList();
-    requestApplyList(parsed, '已還原為預設名單 JU Lucky No.1–300');
+    requestApplyList(parsed, '已還原為預設名單 JU Lucky No.1–165');
   });
 
   // ---------- draw ----------
   var drawing = false;
-  var DRAW_DURATION_MS = 5000; // total suspense time per draw, ~5 seconds
+  var DRAW_DURATION_MS = 3500; // total suspense time per draw, ~3.5 seconds
 
   // Slot-machine style roll: starts fast and eases into a slower, more
   // dramatic pace right before landing on the real result.
@@ -1768,6 +1862,9 @@
       state.pool = state.masterList.slice();
       state.tiers.forEach(function(t){ t.winners = []; });
       state.lastDraw = null;
+      // every tier is available again - restart the stage-mode sequence
+      // from the first one rather than staying wherever it was mid-event
+      document.getElementById('tierSelect').value = '';
       resetStageDisplay();
       closeModal();
       renderAll();
