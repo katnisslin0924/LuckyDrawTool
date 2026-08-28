@@ -320,6 +320,18 @@
     to{ transform: scale(1); opacity:1; }
   }
 
+  /* brief gold glow pulse on each ticket the instant its number is
+     revealed (finalizeDraw() adds this class) - border and shadow both
+     bloom then settle back to the ticket's normal resting look */
+  .ticket.reveal-glow{
+    animation: ticketRevealGlow 1.3s ease-out;
+  }
+  @keyframes ticketRevealGlow{
+    0%{ box-shadow: 0 0 0 0 rgba(243,217,153,0); border-color: var(--gold-dim); }
+    22%{ box-shadow: 0 0 26px 7px rgba(243,217,153,0.8); border-color: var(--gold-bright); }
+    100%{ box-shadow: 0 0 0 0 rgba(243,217,153,0); border-color: var(--gold-dim); }
+  }
+
   /* ---------- winners list ---------- */
   .tier-block{
     margin-bottom: 18px;
@@ -473,6 +485,60 @@
     align-items: center;
     justify-content: flex-start;
     overflow: hidden;
+  }
+
+  /* ---------- reveal effects: gold flash + confetti burst ---------- */
+  /* A big soft radial bloom across the whole frame, fired once right as a
+     draw's numbers are revealed - the "TA-DA" beat before/under the
+     confetti. Sits above the KV background and ticket area but below the
+     confetti (which should read as flying "in front of" the flash). */
+  .stage-reveal-flash{
+    position: absolute;
+    inset: 0;
+    z-index: 6;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(circle at 50% 42%, rgba(255,244,214,0.55) 0%, rgba(217,178,106,0.28) 32%, transparent 65%);
+  }
+  .stage-reveal-flash.fire{
+    animation: stageRevealFlash 0.9s ease-out;
+  }
+  @keyframes stageRevealFlash{
+    0%{ opacity: 0; }
+    18%{ opacity: 1; }
+    100%{ opacity: 0; }
+  }
+
+  /* Confetti: absolutely-positioned pieces spawned by burstConfetti() (see
+     script), each animated once via inline custom properties (--drift,
+     --fall-y, --spin, --fall-duration, --fall-delay) so every piece takes a
+     slightly different path without needing a CSS rule per piece. */
+  .confetti-layer{
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .confetti-piece{
+    position: absolute;
+    top: -16px;
+    left: 0;
+    width: 8px;
+    height: 14px;
+    border-radius: 2px;
+    opacity: 0;
+    will-change: transform, opacity;
+    animation-name: confettiFall;
+    animation-duration: var(--fall-duration, 2.2s);
+    animation-delay: var(--fall-delay, 0s);
+    animation-timing-function: cubic-bezier(0.15, 0.55, 0.4, 1);
+    animation-fill-mode: forwards;
+  }
+  @keyframes confettiFall{
+    0%{ transform: translate(0, 0) rotate(0deg); opacity: 0; }
+    8%{ opacity: 1; }
+    100%{ transform: translate(var(--drift, 0px), var(--fall-y, 600px)) rotate(var(--spin, 540deg)); opacity: 0; }
   }
 
   .stage-brand{
@@ -1016,6 +1082,11 @@
         <div class="stage-brand-text">高雄洲際酒店 · 私享幸運時刻</div>
       </div>
       <div class="stage-draw-slot" id="stageDrawSlot"><!-- #drawCard moved here in stage mode --></div>
+      <!-- reveal effects: a brief gold radial flash across the whole frame,
+           plus a shower of falling confetti - both purely cosmetic, fired
+           by finalizeDraw() right when the winning number(s) are revealed -->
+      <div class="stage-reveal-flash" id="stageRevealFlash"></div>
+      <div class="confetti-layer" id="confettiLayer"></div>
     </div>
   </div>
 
@@ -1789,6 +1860,57 @@
     });
   });
 
+  // Gold radial flash across the whole stage frame, timed to the moment
+  // the winning number(s) become visible.
+  function fireStageFlash(){
+    var flash = document.getElementById('stageRevealFlash');
+    if(!flash) return;
+    flash.classList.remove('fire');
+    void flash.offsetWidth; // force reflow so the animation restarts on every draw
+    flash.classList.add('fire');
+  }
+
+  // A shower of small gold pieces falling from the top of the stage frame.
+  // Pure decoration - spawned fresh each draw and swept away a few seconds
+  // later so the DOM never accumulates leftover pieces across a long event.
+  var confettiCleanupTimer = null;
+  function burstConfetti(){
+    var layer = document.getElementById('confettiLayer');
+    if(!layer) return;
+    var frame = layer.parentElement;
+    var width = (frame && frame.clientWidth) || layer.clientWidth || 900;
+    var height = (frame && frame.clientHeight) || 560;
+    var colors = ['#f3d999', '#d9b26a', '#fff4d6', '#b6903f', '#e8c77f'];
+    var COUNT = 90;
+    var frag = document.createDocumentFragment();
+    for(var i = 0; i < COUNT; i++){
+      var el = document.createElement('div');
+      el.className = 'confetti-piece';
+      var round = Math.random() < 0.4;
+      var size = 6 + Math.random() * 5;
+      el.style.left = (Math.random() * width) + 'px';
+      el.style.background = colors[Math.floor(Math.random() * colors.length)];
+      if(round){
+        el.style.width = size + 'px';
+        el.style.height = size + 'px';
+        el.style.borderRadius = '50%';
+      } else {
+        el.style.width = (size * 0.6) + 'px';
+        el.style.height = (size * 2) + 'px';
+      }
+      el.style.setProperty('--drift', Math.round(Math.random() * 220 - 110) + 'px');
+      el.style.setProperty('--fall-y', Math.round(height * 0.55 + Math.random() * height * 0.5) + 'px');
+      el.style.setProperty('--spin', Math.round(360 + Math.random() * 720) + 'deg');
+      el.style.setProperty('--fall-duration', (1.5 + Math.random() * 1.2).toFixed(2) + 's');
+      el.style.setProperty('--fall-delay', (Math.random() * 0.3).toFixed(2) + 's');
+      frag.appendChild(el);
+    }
+    layer.innerHTML = ''; // clear any leftovers if draws happen in rapid succession
+    layer.appendChild(frag);
+    clearTimeout(confettiCleanupTimer);
+    confettiCleanupTimer = setTimeout(function(){ layer.innerHTML = ''; }, 3200);
+  }
+
   function finalizeDraw(t, qty, tickets){
     var results = [];
     for(var i=0;i<qty;i++){
@@ -1801,8 +1923,13 @@
       if(tickets[i]){
         tickets[i].classList.remove('rolling');
         tickets[i].querySelector('.tno').textContent = fmt(n);
+        tickets[i].classList.add('reveal-glow');
       }
     });
+    if(results.length){
+      fireStageFlash();
+      burstConfetti();
+    }
     state.lastDraw = { tierId: t.id, tierName: t.name, numbers: results.slice() };
     drawing = false;
     renderAll();
